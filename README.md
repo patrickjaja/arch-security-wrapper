@@ -1,8 +1,17 @@
-# AUR Security Scanner - README
+# Enhanced Package Security Scanner v2.0 - README
 
 ## Overview
 
-The AUR Security Scanner is a wrapper script that reviews Arch User Repository (AUR) packages for security threats before updating them. It uses Claude AI to analyze package files and detect malware patterns.
+The Enhanced Package Security Scanner is an intelligent wrapper script that reviews Arch User Repository (AUR) packages for security threats before updating them. It uses Claude AI to analyze package files, detect malware patterns, and provides smart security gating for system updates.
+
+## ✨ New Features in v2.0
+
+- **🔍 Binary Pattern Scanning**: Scans pre-built binaries for suspicious URLs and crypto wallets
+- **🏛️ Official Package Review**: Optional security review of official packages (use `--review-official`)
+- **⚖️ Smart Risk Assessment**: Improved categorization (NONE/LOW = safe, MEDIUM = warning, HIGH/CRITICAL = blocked)
+- **🩹 Remediation Suggestions**: Claude provides specific steps to fix security issues
+- **❌ False Positive Fix**: Pre-built binaries from official sources no longer incorrectly flagged
+- **🎯 Selective Review**: Choose specific packages to review instead of all-or-nothing
 
 ## How the Review Process Works
 
@@ -330,40 +339,97 @@ INDICATORS OF COMPROMISE:
 ❌ Time-bomb malware (activates later)  
 ❌ Supply chain attacks on upstream
 
+## Usage Examples
+
+### Basic Usage
+```bash
+# Standard update with AUR security review
+./secure-update.sh
+
+# Review official packages too (time-consuming)
+./secure-update.sh --review-official
+
+# Skip security scanning (not recommended)
+./secure-update.sh --skip-scan
+
+# Use faster Claude model for quicker reviews
+./secure-update.sh --model=haiku
+```
+
+### Command Line Options
+```bash
+Options:
+  --full-scan         Scan all installed AUR/chaotic packages (not just updates)
+  --scan-all          Scan ALL packages including official repos (paranoid mode)
+  --skip-scan         Skip security scan entirely (dangerous!)
+  --official-only     Only update official repo packages
+  --review-official   Review official packages too (time-consuming!)
+  --model=MODEL       Claude model: haiku (fast), sonnet (balanced), opus (thorough)
+  --parallel=N        Number of parallel scan jobs (default: 10)
+  --show-all          Show all packages regardless of count
+  --max-display=N     Maximum packages to display (default: 50)
+```
+
+## Example Output
+
+The scanner shows a clear selection interface:
+
+![Security Review Selection](2025-08-15_17-21.png)
+
+And provides detailed results with risk assessment:
+
+![Security Review Results](2025-08-15_17-22.png)
+
+## Risk Levels Explained
+
+| Risk Level | Action | Description |
+|------------|--------|-------------|
+| **NONE** | ✅ Safe | No security issues detected |
+| **LOW** | ✅ Safe | Minor notes (e.g., downloads binaries - normal for -bin packages) |
+| **MEDIUM** | ⚠️ Warning | Proceed with caution, review recommended |
+| **HIGH** | ❌ Blocked | Suspicious patterns detected, manual review required |
+| **CRITICAL** | ❌ Blocked | Malware detected, updates blocked for safety |
+
 ## Best Practices
 
-1. **Run Regular Scans**
+1. **Use Selective Review**
    ```bash
-   # Add to crontab for weekly scans
-   0 2 * * 0 /home/user/bin/secure-update.sh --report-only
+   # Review only packages you're unsure about
+   ./secure-update.sh
+   # Choose: a (all), 1,2,3 (specific), or 1-5 (range)
    ```
 
 2. **Review Claude's Findings**
-    - Even "SAFE" packages should be spot-checked
-    - Understand what packages do before installing
+    - Read remediation suggestions for flagged packages
+    - Understand what each package does before installing
+    - Check the detailed report for context
 
 3. **Check Package Reputation**
     - Votes and comments on AUR
-    - Maintainer history
-    - First submitted date
+    - Maintainer history and activity
+    - First submitted date and update frequency
 
 4. **Use Official Repos When Possible**
-    - Official packages are reviewed by Arch team
+    - Official packages are reviewed by Arch maintainers
     - AUR is convenience vs security tradeoff
 
 ## Integration with System
 
 ```bash
-# ~/.bashrc or ~/.zshrc
-alias update='~/bin/secure-update.sh'
-alias yay='echo "Use \"update\" for secure AUR updates"'
+# ~/.bashrc or ~/.zshrc - Replace dangerous yay usage
+alias secure-update='~/bin/secure-update.sh'
+alias yay-update='echo "Use secure-update for safer AUR updates"'
 
-# Disable direct yay updates
+# Smart yay wrapper that blocks dangerous operations
 function yay() {
-    if [[ "$1" == "-S"* ]] || [[ "$1" == "-Syu"* ]]; then
-        echo "⚠️  Use 'update' command for secure AUR updates"
+    if [[ "$1" == "-Syu"* ]] || [[ "$1" == "-Syyu"* ]]; then
+        echo "⚠️  Use 'secure-update' for safe AUR updates with security review"
         return 1
     fi
     command yay "$@"
 }
 ```
+
+## Sample Security Report
+
+See [aur-security-report-example.log](aur-security-report-20250815-172029.log) for a complete example of the security analysis output.
