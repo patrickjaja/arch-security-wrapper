@@ -1,10 +1,19 @@
-# Enhanced Package Security Scanner v2.0 - README
+# Enhanced Package Security Scanner v2.1 - README
 
 ## Overview
 
-The Enhanced Package Security Scanner is an intelligent wrapper script that reviews Arch User Repository (AUR) packages for security threats before updating them. It uses Claude AI to analyze package files, detect malware patterns, and provides smart security gating for system updates.
+The Enhanced Package Security Scanner is an intelligent wrapper script that reviews Arch User Repository (AUR) packages for security threats before updating them, and now also provides post-update analysis and automated issue resolution. It uses Claude AI to analyze package files, detect malware patterns, provide smart security gating for system updates, and automatically fix update-related issues.
 
-## ✨ New Features in v2.0
+## ✨ New Features in v2.1
+
+- **🔧 Post-Update Analysis**: Automatically analyzes system state after updates to detect issues
+- **🤖 AI-Powered Issue Detection**: Claude identifies failed services, dependency conflicts, and configuration issues
+- **📋 Planning Mode Integration**: Review and approve fixes before execution for safety
+- **🔄 Automated Fix System**: Apply fixes automatically or with manual confirmation
+- **📊 Comprehensive System Checks**: Monitors failed services, .pacnew files, broken dependencies, and more
+- **📝 Detailed Fix Logging**: All actions are logged for audit and rollback purposes
+
+## Previous Features (v2.0)
 
 - **🔍 Binary Pattern Scanning**: Scans pre-built binaries for suspicious URLs and crypto wallets
 - **🏛️ Official Package Review**: Optional security review of official packages (use `--review-official`)
@@ -339,6 +348,119 @@ INDICATORS OF COMPROMISE:
 ❌ Time-bomb malware (activates later)  
 ❌ Supply chain attacks on upstream
 
+## Post-Update Analysis and Fixing (New in v2.1)
+
+### Overview
+
+After package updates complete, the script automatically analyzes the system for issues and can fix them using Claude AI. This feature helps resolve common post-update problems without manual intervention.
+
+### How It Works
+
+1. **Automatic Triggering**
+   - Activates after update process completes
+   - Captures all update output and errors
+   - Runs comprehensive system checks
+
+2. **System State Collection**
+   ```bash
+   # Information gathered:
+   systemctl --failed           # Failed services
+   find /etc -name "*.pacnew"   # Config conflicts
+   pacman -Qk                    # Package integrity
+   pacman -Qdtq                  # Orphaned packages
+   dmesg | tail                  # Kernel messages
+   ```
+
+3. **Claude AI Analysis**
+   - Identifies issues by severity
+   - Generates targeted fix commands
+   - Provides detailed explanations
+
+4. **Fix Execution Workflow**
+
+   **Planning Mode (Manual):**
+   ```
+   1. Claude analyzes issues
+   2. Presents fix plan to user
+   3. User reviews and approves
+   4. Fixes are executed
+   5. Final verification
+   ```
+
+   **Auto Mode:**
+   ```
+   1. Claude analyzes issues
+   2. 5-second warning
+   3. Fixes applied automatically
+   4. Results logged
+   ```
+
+### Command-Line Options
+
+```bash
+# Skip post-update analysis
+./secure-update.sh --skip-post-update
+
+# Choose fix mode
+./secure-update.sh --fix-mode=manual  # Default: confirm each fix
+./secure-update.sh --fix-mode=auto    # Apply all fixes automatically
+./secure-update.sh --fix-mode=skip    # Analyze only, no fixes
+
+# Select Claude model for analysis
+./secure-update.sh --post-update-model=haiku   # Fast (default)
+./secure-update.sh --post-update-model=sonnet  # More thorough
+./secure-update.sh --post-update-model=opus    # Most comprehensive
+```
+
+### Common Issues and Fixes
+
+#### 1. Failed Services
+```bash
+# Issue: Service failed after update
+# Fix: Restart and re-enable service
+sudo systemctl restart service_name
+sudo systemctl enable service_name
+```
+
+#### 2. Configuration Conflicts
+```bash
+# Issue: .pacnew files exist
+# Fix: Review and merge changes
+vimdiff /etc/config.conf /etc/config.conf.pacnew
+sudo mv /etc/config.conf.pacnew /etc/config.conf
+```
+
+#### 3. Broken Dependencies
+```bash
+# Issue: Missing libraries
+# Fix: Reinstall affected packages
+sudo pacman -S package_name --overwrite '*'
+```
+
+#### 4. Kernel Module Issues
+```bash
+# Issue: Module fails to load
+# Fix: Rebuild modules
+sudo mkinitcpio -P
+sudo update-grub
+```
+
+### Log Files
+
+Post-update analysis creates several log files:
+
+- `post-update-analysis-[timestamp].log` - Full analysis report
+- `post-update-fixes-[timestamp].log` - Applied fixes and results
+- `update_output_[timestamp].log` - Raw update process output
+
+### Safety Features
+
+- **Planning Mode**: Review fixes before execution
+- **Backup Creation**: Config files backed up before modification
+- **Error Handling**: Continues if individual fixes fail
+- **Detailed Logging**: All actions recorded for audit
+- **Manual Override**: Can skip analysis with `--skip-post-update`
+
 ## Usage Examples
 
 ### Basic Usage
@@ -358,7 +480,7 @@ INDICATORS OF COMPROMISE:
 
 ### Command Line Options
 ```bash
-Options:
+Security Scan Options:
   --full-scan         Scan all installed AUR/chaotic packages (not just updates)
   --scan-all          Scan ALL packages including official repos (paranoid mode)
   --skip-scan         Skip security scan entirely (dangerous!)
@@ -368,6 +490,11 @@ Options:
   --parallel=N        Number of parallel scan jobs (default: 10)
   --show-all          Show all packages regardless of count
   --max-display=N     Maximum packages to display (default: 50)
+
+Post-Update Analysis Options:
+  --skip-post-update       Skip post-update Claude analysis
+  --fix-mode=MODE          Fix mode: auto, manual (default), or skip
+  --post-update-model=MODEL  Claude model for post-update analysis
 ```
 
 ## Example Output
