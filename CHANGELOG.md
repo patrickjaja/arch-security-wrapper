@@ -5,6 +5,14 @@ All notable changes to the Enhanced Package Security Scanner will be documented 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.1] - 2025-09-03
+
+### Fixed
+- Fixed script exiting prematurely when no AUR packages need updating
+- Fixed `wait` command causing script exit due to `set -e` when yay times out or fails
+- Fixed `grep -c` command causing script exit when no matches are found
+- Script now correctly continues with official repository updates even when AUR checking fails
+
 ## [2.1.0] - 2025-08-23
 
 ### Added

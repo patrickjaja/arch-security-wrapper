@@ -1,0 +1,30 @@
+{
+    "keep": {
+        "days": true,
+        "amount": 14
+    },
+    "auditLog": "/home/patrickjaja/development/arch-security-wrapper/logs/.6bb455e03781b55fcb4405a6c0d89a7da2d6af2a-audit.json",
+    "files": [
+        {
+            "date": 1754898818465,
+            "name": "/home/patrickjaja/development/arch-security-wrapper/logs/mcp-puppeteer-2025-08-11.log",
+            "hash": "4f863aec11835976060025219eadfe58242adaa6c44c6accb22b3d819edcce52"
+        },
+        {
+            "date": 1755267729664,
+            "name": "/home/patrickjaja/development/arch-security-wrapper/logs/mcp-puppeteer-2025-08-15.log",
+            "hash": "b3f72d2050fa411061f792108e4646b3741c94aabe2f2b44458012d3539c6f52"
+        },
+        {
+            "date": 1755971330142,
+            "name": "/home/patrickjaja/development/arch-security-wrapper/logs/mcp-puppeteer-2025-08-23.log",
+            "hash": "0dec38a5392f8587640a7933467a9bc12ddba97ceb99aef0fa15161e6e9b5e43"
+        },
+        {
+            "date": 1756064304276,
+            "name": "/home/patrickjaja/development/arch-security-wrapper/logs/mcp-puppeteer-2025-08-24.log",
+            "hash": "488cc83b7c51f2036ebb699ab4b1c7261a5ade6e9abf0355bc3242098bfe3593"
+        }
+    ],
+    "hashType": "sha256"
+}

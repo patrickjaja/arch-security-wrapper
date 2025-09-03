@@ -475,27 +475,40 @@ echo -e "${CYAN}Checking AUR packages... (this may take a moment)${NC}"
 echo "=== AUR Updates ===" >> "$YAY_OUTPUT"
 
 # Run yay with timeout and show progress
-{
-    timeout 120 yay -Qua 2>/dev/null >> "$YAY_OUTPUT" &
-    YAY_PID=$!
-    
-    # Show progress dots while yay is running
-    while kill -0 $YAY_PID 2>/dev/null; do
-        echo -n "."
-        sleep 2
-    done
-    echo ""
-    
-    wait $YAY_PID
-    YAY_EXIT_CODE=$?
-    
-    if [ $YAY_EXIT_CODE -eq 124 ]; then
-        echo -e "${YELLOW}Warning: AUR check timed out after 2 minutes${NC}"
-    fi
-} 2>/dev/null
+YAY_EXIT_CODE=0
+timeout 30 yay -Qua >> "$YAY_OUTPUT" 2>/dev/null &
+YAY_PID=$!
 
-# Count and display AUR updates
-AUR_LINES=$(sed -n '/=== AUR Updates ===/,$p' "$YAY_OUTPUT" | grep -v "=== AUR Updates ===" | grep -c '^[^[:space:]]' || echo "0")
+# Show progress dots while yay is running
+while kill -0 $YAY_PID 2>/dev/null; do
+    echo -n "."
+    sleep 1
+done
+echo ""
+
+# Temporarily disable set -e to handle yay failure gracefully
+set +e
+wait $YAY_PID 2>/dev/null
+YAY_EXIT_CODE=$?
+set -e
+
+if [ $YAY_EXIT_CODE -eq 124 ]; then
+    echo -e "${YELLOW}Warning: AUR check timed out after 30 seconds${NC}"
+    echo -e "${CYAN}Continuing without AUR updates...${NC}"
+elif [ $YAY_EXIT_CODE -ne 0 ] && [ $YAY_EXIT_CODE -ne 124 ]; then
+    echo -e "${YELLOW}Warning: AUR check failed (exit code: $YAY_EXIT_CODE)${NC}"
+    echo -e "${CYAN}Continuing without AUR updates...${NC}"
+fi
+
+# Count and display AUR updates (default to 0 if yay failed)
+if [ -f "$YAY_OUTPUT" ]; then
+    # Use || true to prevent grep from causing script exit with set -e
+    AUR_LINES=$(sed -n '/=== AUR Updates ===/,$p' "$YAY_OUTPUT" | grep -v "=== AUR Updates ===" | grep -c '^[^[:space:]]' || true)
+    # Ensure AUR_LINES has a valid numeric value
+    [ -z "$AUR_LINES" ] && AUR_LINES=0
+else
+    AUR_LINES=0
+fi
 if [ $AUR_LINES -gt 0 ]; then
     echo -e "${GREEN}AUR updates found: $AUR_LINES${NC}"
     
@@ -545,24 +558,32 @@ if [ $TOTAL_UPDATES_ESTIMATE -gt 0 ]; then
     echo -e "\n${BLUE}═══ Update Summary ═══${NC}"
     echo -e "${CYAN}Found ${YELLOW}$TOTAL_UPDATES_ESTIMATE${CYAN} packages to update:${NC}"
     echo -e "  ${GREEN}Official packages: $OFFICIAL_UPDATE_COUNT${NC} (trusted, auto-approved)"
-    echo -e "  ${YELLOW}AUR packages: $AUR_LINES${NC} (will need security review)"
-    
-    # Ask if user wants to proceed
-    echo -e "\n${YELLOW}Do you want to proceed? [y/N]${NC}"
-    read -r proceed_response
-    
-    if [[ ! "$proceed_response" =~ ^[Yy]$ ]]; then
-        echo -e "\n${CYAN}Operation cancelled by user.${NC}"
-        exit 0
+    if [ $AUR_LINES -gt 0 ]; then
+        echo -e "  ${YELLOW}AUR packages: $AUR_LINES${NC} (will need security review)"
+    else
+        echo -e "  ${CYAN}AUR packages: 0${NC} (no AUR updates needed)"
     fi
+    
+    # Only ask about AUR review if there are AUR packages
+    if [ $AUR_LINES -gt 0 ]; then
+        echo -e "\n${YELLOW}Do you want to proceed with AUR security review? [y/N]${NC}"
+        read -r proceed_response
+        
+        if [[ ! "$proceed_response" =~ ^[Yy]$ ]]; then
+            echo -e "\n${CYAN}Skipping AUR security review.${NC}"
+            # Clear AUR packages list to skip review
+            AUR_PACKAGES_LIST=()
+        fi
+    fi
+elif [ $TOTAL_UPDATES_ESTIMATE -eq 0 ]; then
+    echo -e "\n${GREEN}System is up to date! No packages need updating.${NC}"
+    exit 0
 fi
-
-# Determine which packages need security review
-echo -e "\n${CYAN}Determining which packages need security review...${NC}"
 
 # Collect AUR packages that need updates
 declare -a AUR_PACKAGES_LIST
 if [ $AUR_LINES -gt 0 ]; then
+    echo -e "\n${CYAN}Determining which packages need security review...${NC}"
     while IFS= read -r line; do
         if [[ -n "$line" ]] && [[ "$line" != "=== AUR Updates ===" ]]; then
             pkg=$(echo "$line" | awk '{print $1}')
@@ -1190,284 +1211,5 @@ if [ $TOTAL_UPDATES -gt 0 ]; then
 else
     echo -e "\n${GREEN}System is up to date!${NC}"
 fi
-
-exit 0
-    local update_log="$1"
-    local exit_code="$2"
-    
-    echo -e "${CYAN}Analyzing update results...${NC}"
-    
-    # Collect system state information
-    local system_info_file="$TMPDIR/system_info_${TIMESTAMP}.txt"
-    
-    {
-        echo "=== UPDATE LOG SUMMARY ==="
-        echo "Exit Code: $exit_code"
-        echo "Timestamp: $(date)"
-        echo ""
-        
-        echo "=== FAILED SERVICES ==="
-        systemctl --failed --no-pager 2>/dev/null || echo "No failed services detected"
-        echo ""
-        
-        echo "=== PACNEW FILES ==="
-        find /etc -name "*.pacnew" 2>/dev/null | head -20 || echo "No .pacnew files found"
-        echo ""
-        
-        echo "=== BROKEN DEPENDENCIES ==="
-        pacman -Qk 2>&1 | grep -E "warning:|error:" | head -20 || echo "No broken dependencies detected"
-        echo ""
-        
-        echo "=== ORPHANED PACKAGES ==="
-        pacman -Qdtq 2>/dev/null | head -10 || echo "No orphaned packages"
-        echo ""
-        
-        echo "=== RECENT KERNEL MESSAGES ==="
-        sudo dmesg | tail -50 2>/dev/null || echo "Unable to read kernel messages"
-        echo ""
-        
-        echo "=== UPDATE OUTPUT ERRORS/WARNINGS ==="
-        grep -iE "error|warning|failed|conflict|broken" "$update_log" | head -50 || echo "No errors found in update log"
-    } > "$system_info_file"
-    
-    # Prepare Claude analysis prompt
-    local analysis_prompt="You are a system administrator analyzing the results of a package update on Arch Linux.
-Review the update log and system state to identify any issues that need attention.
-
-IMPORTANT: This is a POST-UPDATE analysis. The updates have already been applied.
-Your role is to identify problems and suggest fixes, not to prevent updates.
-
-Analyze for:
-1. Failed package installations or partial updates
-2. Service failures or crashes
-3. Configuration file conflicts (.pacnew files)
-4. Dependency issues or broken packages
-5. Kernel/driver problems
-6. File permission issues
-7. Systemd unit failures
-
-Categorize issues by severity:
-- CRITICAL: System won't boot or major functionality broken
-- HIGH: Important services/features broken
-- MEDIUM: Non-critical issues that should be fixed
-- LOW: Minor issues or cleanup tasks
-
-For each issue found:
-1. Describe the problem clearly
-2. Explain the potential impact
-3. Provide specific fix commands
-
-Format your response as:
-ANALYSIS_COMPLETE: true
-ISSUES_FOUND: [true/false]
-CRITICAL_COUNT: [number]
-HIGH_COUNT: [number]
-MEDIUM_COUNT: [number]
-LOW_COUNT: [number]
-
-ISSUES:
-[For each issue]
-SEVERITY: [CRITICAL/HIGH/MEDIUM/LOW]
-PROBLEM: [Description]
-IMPACT: [What will happen if not fixed]
-FIX_COMMANDS:
-[Specific commands to fix the issue]
-END_ISSUE
-
-SUMMARY: [One paragraph summary of the update status and recommendations]"
-    
-    # Send to Claude for analysis
-    echo -e "${CYAN}Sending data to Claude for analysis (model: $POST_UPDATE_MODEL)...${NC}"
-    
-    local claude_analysis=$(cat "$system_info_file" "$update_log" | claude --model "$POST_UPDATE_MODEL" --print "$analysis_prompt" 2>&1)
-    
-    # Save analysis to file
-    local analysis_file="$SCRIPT_DIR/post-update-analysis-${TIMESTAMP}.log"
-    echo "$claude_analysis" > "$analysis_file"
-    
-    # Parse Claude's response
-    local issues_found=$(echo "$claude_analysis" | grep -i "^ISSUES_FOUND:" | head -1 | cut -d: -f2 | xargs)
-    local critical_count=$(echo "$claude_analysis" | grep -i "^CRITICAL_COUNT:" | head -1 | cut -d: -f2 | xargs)
-    local high_count=$(echo "$claude_analysis" | grep -i "^HIGH_COUNT:" | head -1 | cut -d: -f2 | xargs)
-    local medium_count=$(echo "$claude_analysis" | grep -i "^MEDIUM_COUNT:" | head -1 | cut -d: -f2 | xargs)
-    local low_count=$(echo "$claude_analysis" | grep -i "^LOW_COUNT:" | head -1 | cut -d: -f2 | xargs)
-    
-    # Display analysis results
-    echo -e "\n${BLUE}═══ Analysis Results ═══${NC}"
-    
-    if [[ "$issues_found" == "false" ]] || [[ -z "$issues_found" ]]; then
-        echo -e "${GREEN}✓ No issues detected! System update completed successfully.${NC}"
-        echo -e "${CYAN}Analysis saved to: $analysis_file${NC}"
-        return 0
-    fi
-    
-    # Issues were found
-    echo -e "${YELLOW}Issues detected during update:${NC}"
-    [[ "$critical_count" -gt 0 ]] && echo -e "  ${RED}Critical issues: $critical_count${NC}"
-    [[ "$high_count" -gt 0 ]] && echo -e "  ${RED}High priority: $high_count${NC}"
-    [[ "$medium_count" -gt 0 ]] && echo -e "  ${YELLOW}Medium priority: $medium_count${NC}"
-    [[ "$low_count" -gt 0 ]] && echo -e "  ${CYAN}Low priority: $low_count${NC}"
-    
-    echo -e "\n${CYAN}Full analysis saved to: $analysis_file${NC}"
-    
-    # Check if we should proceed with fixes
-    if [[ "$FIX_MODE" == "skip" ]]; then
-        echo -e "\n${YELLOW}Fix mode is set to 'skip'. Review the analysis file for manual fixes.${NC}"
-        return 0
-    fi
-    
-    # Extract and prepare fixes
-    echo -e "\n${BLUE}═══ Preparing Fix Proposals ═══${NC}"
-    propose_and_apply_fixes "$analysis_file" "$claude_analysis"
-}
-
-propose_and_apply_fixes() {
-    local analysis_file="$1"
-    local claude_analysis="$2"
-    
-    # Create a fix plan file
-    local fix_plan_file="$TMPDIR/fix_plan_${TIMESTAMP}.sh"
-    local fix_log_file="$SCRIPT_DIR/post-update-fixes-${TIMESTAMP}.log"
-    
-    echo "#!/bin/bash" > "$fix_plan_file"
-    echo "# Post-Update Fix Plan - Generated $(date)" >> "$fix_plan_file"
-    echo "# Mode: $FIX_MODE" >> "$fix_plan_file"
-    echo "" >> "$fix_plan_file"
-    
-    # Extract fixes from Claude's analysis
-    local in_issue=false
-    local current_severity=""
-    local current_problem=""
-    local current_commands=""
-    local issue_count=0
-    
-    while IFS= read -r line; do
-        if [[ "$line" =~ ^SEVERITY: ]]; then
-            current_severity=$(echo "$line" | cut -d: -f2- | xargs)
-            in_issue=true
-            current_commands=""
-            ((issue_count++))
-        elif [[ "$line" =~ ^PROBLEM: ]] && [[ "$in_issue" == "true" ]]; then
-            current_problem=$(echo "$line" | cut -d: -f2- | xargs)
-        elif [[ "$line" =~ ^FIX_COMMANDS: ]] && [[ "$in_issue" == "true" ]]; then
-            # Start collecting commands
-            continue
-        elif [[ "$line" =~ ^END_ISSUE ]] && [[ "$in_issue" == "true" ]]; then
-            # Add this issue's fixes to the plan
-            if [[ -n "$current_commands" ]]; then
-                echo "# Issue $issue_count: $current_problem (Severity: $current_severity)" >> "$fix_plan_file"
-                echo "$current_commands" >> "$fix_plan_file"
-                echo "" >> "$fix_plan_file"
-            fi
-            in_issue=false
-            current_commands=""
-        elif [[ "$in_issue" == "true" ]] && [[ "$line" =~ ^[[:space:]] ]] && [[ -n "$line" ]]; then
-            # This is likely a command line
-            current_commands="${current_commands}${line}"$'\n'
-        fi
-    done <<< "$claude_analysis"
-    
-    # If no fixes were extracted, return
-    if [[ $issue_count -eq 0 ]]; then
-        echo -e "${GREEN}No automated fixes required.${NC}"
-        return 0
-    fi
-    
-    echo -e "${CYAN}Generated fix plan with $issue_count issue(s) to address.${NC}"
-    
-    # Handle fix execution based on mode
-    if [[ "$FIX_MODE" == "auto" ]]; then
-        echo -e "\n${YELLOW}Auto-fix mode enabled. Applying fixes automatically...${NC}"
-        echo -e "${RED}⚠️  Fixes will be applied in 5 seconds. Press Ctrl+C to cancel.${NC}"
-        sleep 5
-        execute_fixes_with_claude "$fix_plan_file" "$fix_log_file" "auto"
-    elif [[ "$FIX_MODE" == "manual" ]]; then
-        echo -e "\n${YELLOW}Manual fix mode. Requesting approval for fixes...${NC}"
-        execute_fixes_with_claude "$fix_plan_file" "$fix_log_file" "manual"
-    fi
-}
-
-execute_fixes_with_claude() {
-    local fix_plan_file="$1"
-    local fix_log_file="$2"
-    local mode="$3"
-    
-    # Prepare the Claude fix execution prompt
-    local fix_prompt="You are tasked with fixing post-update issues on an Arch Linux system.
-The following fix plan has been generated based on the update analysis.
-
-Fix Mode: $mode
-
-IMPORTANT INSTRUCTIONS:
-1. In MANUAL mode: Present each fix clearly and wait for user confirmation
-2. In AUTO mode: Apply fixes but log each action
-3. Use appropriate error handling for each command
-4. Verify each fix was successful before proceeding
-5. If a fix fails, note it and continue with others
-6. Create backups of configuration files before modifying them
-
-Fix Plan to Execute:
-$(cat "$fix_plan_file")
-
-For MANUAL mode, use this format:
-- Describe what the fix does
-- Show the exact commands that will be run
-- Ask for confirmation before executing
-- Report the result after execution
-
-For AUTO mode:
-- Execute each fix
-- Log the action and result
-- Continue even if individual fixes fail
-- Provide a summary at the end
-
-Start the fix process now."
-    
-    echo -e "\n${BLUE}═══ Executing Fixes with Claude ═══${NC}"
-    
-    if [[ "$mode" == "manual" ]]; then
-        # Use planning mode for manual confirmation
-        echo -e "${CYAN}Launching Claude in planning mode for fix proposals...${NC}"
-        echo -e "${YELLOW}Claude will present each fix for your approval.${NC}\n"
-        
-        # Launch Claude with planning mode
-        claude --permission-mode plan --model "$POST_UPDATE_MODEL" "$fix_prompt" 2>&1 | tee "$fix_log_file"
-        
-        # After planning mode, ask if user wants to execute
-        echo -e "\n${YELLOW}Do you want to execute the approved fixes? [y/N]${NC}"
-        read -r execute_response
-        
-        if [[ "$execute_response" =~ ^[Yy]$ ]]; then
-            echo -e "\n${CYAN}Executing approved fixes...${NC}"
-            # Re-run Claude without planning mode to execute
-            cat "$fix_plan_file" | claude --model "$POST_UPDATE_MODEL" --print "Execute these fixes on the system now. Report each action taken and its result." 2>&1 | tee -a "$fix_log_file"
-        else
-            echo -e "${CYAN}Fix execution cancelled by user.${NC}"
-        fi
-    else
-        # Auto mode - execute directly
-        echo "$fix_prompt" | claude --model "$POST_UPDATE_MODEL" --print 2>&1 | tee "$fix_log_file"
-    fi
-    
-    echo -e "\n${GREEN}✓ Fix process completed.${NC}"
-    echo -e "${CYAN}Fix log saved to: $fix_log_file${NC}"
-    
-    # Final system check
-    echo -e "\n${BLUE}═══ Final System Check ═══${NC}"
-    echo -e "${CYAN}Checking system status after fixes...${NC}"
-    
-    local failed_services=$(systemctl --failed --no-pager 2>/dev/null | grep -c "loaded units listed" || echo "0")
-    local pacnew_files=$(find /etc -name "*.pacnew" 2>/dev/null | wc -l)
-    
-    echo -e "  Failed services: ${failed_services}"
-    echo -e "  .pacnew files remaining: ${pacnew_files}"
-    
-    if [[ $failed_services -eq 0 ]] && [[ $pacnew_files -eq 0 ]]; then
-        echo -e "\n${GREEN}✓ System is in good health!${NC}"
-    else
-        echo -e "\n${YELLOW}Some issues may still need manual attention.${NC}"
-        echo -e "${CYAN}Review the fix log for details: $fix_log_file${NC}"
-    fi
-}
 
 exit 0
